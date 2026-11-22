@@ -1,0 +1,90 @@
+<!DOCTYPE html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>The Detective Room</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+:root{--mr:#7a1a2b;--gd:#c9a34a;--tx:#e6dfd0;--pn:#1d1618}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at 50% 0,#251a1d,#09070a);color:var(--tx);font:16px Georgia,serif}
+#app{max-width:1200px;margin:auto;padding:16px}h1{color:var(--gd);letter-spacing:4px;margin:.2em 0}h2,h3{color:var(--gd);margin:.4em 0}
+.pn{background:var(--pn);border:1px solid #3a2a2e;border-left:4px solid var(--mr);border-radius:6px;padding:12px;margin:10px 0}
+button{background:var(--mr);color:var(--tx);border:1px solid var(--gd);padding:10px 14px;border-radius:5px;font:inherit;cursor:pointer;margin:3px}
+button:disabled{opacity:.4}button.g{background:#2a2022}input,select,textarea{background:#120d0f;color:var(--tx);border:1px solid #4a3a3e;padding:9px;border-radius:5px;font:inherit;width:100%;margin:4px 0}
+input[type=checkbox]{width:auto}.row{display:flex;gap:16px;flex-wrap:wrap;align-items:center}.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px}
+.card{background:#241b1e;border:1px solid var(--gd);border-radius:4px;padding:10px;animation:in .7s}.card small{color:var(--gd);text-transform:uppercase}
+@keyframes in{from{opacity:0;transform:translateY(-30px) rotate(-4deg);box-shadow:0 0 40px var(--gd)}to{opacity:1}}
+.code{font-size:72px;letter-spacing:12px;color:var(--gd);font-weight:bold}.chip{display:inline-block;padding:6px 12px;margin:3px;border:1px solid var(--gd);border-radius:20px}.ok{background:#1d4a2a}
+nav{display:flex;flex-wrap:wrap}nav button{flex:1}nav .on{background:var(--gd);color:#000}#tm{font-size:28px;color:var(--gd)}
+.toast{position:fixed;top:10px;left:50%;transform:translateX(-50%);background:var(--gd);color:#000;padding:10px 18px;border-radius:6px;z-index:9}.sm{font-size:14px;opacity:.85}
+</style></head><body><div id="app">Memuat… (kalau tulisan ini tidak hilang, server tidak terjangkau)</div><script>
+window.onerror=(m,s,l)=>document.body.insertAdjacentHTML('afterbegin','<pre style="color:#f88;padding:8px;white-space:pre-wrap">Error: '+m+' (baris '+l+')</pre>');
+const $=s=>document.querySelector(s),E=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const post=(p,b)=>fetch(p,{method:'POST',body:JSON.stringify(b)}).then(r=>r.json());
+let S=null,me=JSON.parse(sessionStorage.me||'null'),tab='ev',sel=[],off=0,pend=false,pB=0,pM=0,INFO={ip:location.hostname},ac;
+const act=o=>post('/api/act',{code:me.code,pid:me.pid,...o});
+const host=()=>me&&me.pid==='host';
+// ===== suara sederhana (WebAudio) =====
+function sfx(t){try{ac=ac||new AudioContext();const f={ev:[520,.15],clue:[880,.5],type:[180,.05]}[t],o=ac.createOscillator(),g=ac.createGain();o.connect(g);g.connect(ac.destination);o.frequency.value=f[0];o.type=t=='type'?'square':'sine';g.gain.setValueAtTime(.12,ac.currentTime);g.gain.exponentialRampToValueAtTime(.001,ac.currentTime+f[1]);o.start();o.stop(ac.currentTime+f[1]);if(t=='clue')setTimeout(()=>sfx('ev'),250)}catch(e){}}
+function amb(){try{ac=ac||new AudioContext();[55,55.7,82].forEach(fr=>{const o=ac.createOscillator(),g=ac.createGain();o.frequency.value=fr;g.gain.value=.025;o.connect(g);g.connect(ac.destination);o.start()})}catch(e){}}
+function toast(t){const d=document.createElement('div');d.className='toast';d.textContent=t;document.body.append(d);setTimeout(()=>d.remove(),3000)}
+// ===== koneksi =====
+function start(){
+  if(location.protocol==='file:'){$('#app').innerHTML='<h1>Buka lewat server</h1><div class=pn>Jangan buka file HTML langsung. Jalankan <b>node server.js</b>, lalu buka <b>http://localhost:3000/?tv=1</b> di PC.</div>';return}
+  document.addEventListener('click',()=>{if(host()&&!window.ambOn){window.ambOn=1;amb()}});
+  fetch('/api/info').then(r=>r.json()).then(i=>{INFO=i;render()}).catch(()=>{});
+  if(new URLSearchParams(location.search).get('tv'))return create();
+  if(me)return connect();const q=new URLSearchParams(location.search).get('r')||'';
+  $('#app').innerHTML=`<h1>THE DETECTIVE ROOM</h1><h3>UNSOLVED CASES</h3>
+  <div class=pn><b>Pemain (HP)</b><input id=cd placeholder="Kode ruangan" value="${E(q)}" maxlength=4 style="text-transform:uppercase"><input id=nm placeholder="Nama samaran detektif" maxlength=16><button onclick="join()">Gabung</button><p id=er></p></div>
+  <div class=pn><b>Host (PC/Laptop)</b><br><button onclick="create()">Buat Ruangan</button></div>`}
+const bad='<div class=pn>Tidak bisa terhubung ke server. Pastikan <b>node server.js</b> berjalan dan buka lewat alamat http://…:3000</div>';
+async function create(){try{me=await post('/api/create',{});sessionStorage.me=JSON.stringify(me);connect()}catch(e){$('#app').innerHTML=bad}}
+async function join(){try{const r=await post('/api/join',{code:$('#cd').value.toUpperCase(),name:$('#nm').value||'Detektif'});if(r.err)return $('#er').textContent=r.err;me=r;sessionStorage.me=JSON.stringify(me);connect()}catch(e){$('#er').textContent='Server tidak terjangkau'}}
+function connect(){const es=new EventSource(`/events?code=${me.code}&pid=${me.pid}`);
+  es.onmessage=e=>{S=JSON.parse(e.data);off=S.now-Date.now();
+    if(host()&&S.board.length>pB)sfx('type');if(!host()&&S.mine.length>pM&&pM)sfx('clue'),toast('🔎 Bukti baru di tanganmu!');
+    if(host()&&S.log.some(l=>l.includes('tersembunyi'))&&S.board.length==pB&&S.links.length)0;pB=S.board.length;pM=S.mine.length;render()};
+  es.onerror=()=>{};}
+document.addEventListener('focusout',()=>{if(pend){pend=false;setTimeout(render,60)}});
+setInterval(()=>{const t=$('#tm');if(t&&S&&S.deadline){const s=Math.max(0,Math.round((S.deadline-Date.now()-off)/1000));t.textContent=Math.floor(s/60)+':'+String(s%60).padStart(2,'0')}},500);
+function render(){if(!S)return;const a=document.activeElement;if(!host()&&a&&(a.tagName=='TEXTAREA'||a.tagName=='SELECT'||(a.tagName=='INPUT'&&a.type=='text'))){pend=true;return}
+  $('#app').innerHTML=host()?hostV():playV();if(host()&&S.phase=='lobby')qr()}
+const chips=()=>S.players.map(p=>`<span class="chip ${p.ready||p.voted||p.locked?'ok':''}">${E(p.name)}${S.phase=='lobby'?(p.ready?' ✓':''):S.phase=='vote'?(p.voted?' ✓':''):S.phase=='accuse'?(p.locked?' 🔒':''):''}</span>`).join('');
+const evCard=(e,extra='')=>`<div class=card><small>${e.k} · ${e.id}</small><br><b>${E(e.t)}</b><p class=sm>${E(e.x)}</p>${extra}</div>`;
+const sName=id=>(S.c.suspects.find(s=>s.id==id)||{}).n||id;
+// ===== HOST =====
+function qr(){const h=/^(localhost|127\.)/.test(location.hostname)?INFO.ip:location.hostname,pt=location.port||80,u=(/^(localhost|127\.)/.test(location.hostname)?`http://${h}:${pt}`:location.origin)+`/?r=${S.code}`;
+  $('#u').innerHTML=[u,...(INFO.all||[]).filter(i=>i!=h).map(i=>`http://${i}:${pt}/?r=${S.code}`)].join('<br>');try{new QRCode($('#qr'),{text:u,width:180,height:180})}catch(e){}}
+function hostV(){const c=S.c;
+  if(S.phase=='lobby')return`<h1>THE DETECTIVE ROOM</h1><h3>${c.title}</h3><div class="pn row"><div id=qr style="background:#fff;padding:8px;min-width:196px;min-height:196px"></div><div><div class=code>${S.code}</div><div class=sm>Scan QR / buka: <span id=u></span></div></div></div>
+  <div class=pn><h3>Detektif (${S.players.length}/8)</h3>${chips()||'Menunggu pemain…'}</div><p class=sm>Layar ini hanya tampilan bersama. Semua kontrol lewat HP: tekan SIAP, lalu salah satu menekan MULAI.</p>`;
+  if(S.phase=='play')return`<div class=row><h2 style="flex:1">${c.title}</h2><span id=tm></span></div>
+  <div class=pn>${E(c.brief)}</div><h3>Papan Bukti (${S.board.length})</h3><div class=grid>${S.board.map(e=>evCard(e)).join('')||'<i>Kosong — pemain harus mengirim bukti dari HP.</i>'}</div>
+  <div class=pn><h3>Koneksi & Teori</h3>${S.links.map(l=>`<div>🧵 <b>${l.a}</b> ↔ <b>${l.b}</b> — ${E(l.text||'…')} <small>(${E(l.by)})</small></div>`).join('')||'Belum ada.'}</div>
+  <div class=pn><h3>Catatan Kasus</h3>${S.log.map(l=>`<div class=sm>▸ ${E(l)}</div>`).join('')}</div>`;
+  if(S.phase=='vote')return`<h1>VOTING</h1><div class=pn>Pilih tersangka di HP masing-masing.<br>${chips()}</div>`;
+  if(S.phase=='accuse')return`<h1>TUDUHAN AKHIR</h1><div class=pn>Tersangka pilihan tim: <b>${sName(S.draft.culprit)}</b>. Lengkapi motif, metode, kronologi di HP, lalu semua menekan Kunci.<br>${chips()}</div>`;
+  return resV()}
+function resV(){const r=S.res;return`<h1>HASIL KASUS</h1><div class=pn><div class=code style="font-size:56px">${r.total}/100</div><h2>${E(r.rank)}</h2>Waktu dipakai: ${r.mins} menit</div>
+  <div class=pn>${Object.entries(r.parts).map(([k,v])=>`<div>${k}: <b>${v}</b></div>`).join('')}${r.pen?`<div>Tuduhan salah: <b>−${r.pen}</b></div>`:''}</div><div class=pn><h3>Solusi</h3>${E(r.sol)}</div>`}
+// ===== PEMAIN =====
+function playV(){const c=S.c,me_=S.players.find(p=>p.id==me.pid)||{};
+  if(S.phase=='lobby')return`<h1>DETEKTIF</h1><div class=pn>Ruangan <b>${S.code}</b><br>${chips()}</div><button onclick="act({type:'ready',v:${!me_.ready}})">${me_.ready?'Batal siap':'SIAP'}</button><button ${S.players.every(p=>p.ready)?'':'disabled'} onclick="act({type:'start'})">MULAI KASUS</button>`;
+  if(S.phase=='vote')return`<h2>Siapa pelakunya?</h2>${c.suspects.map(s=>`<button style="width:100%" class="${me_.voted?'g':''}" onclick="act({type:'vote',s:'${s.id}'})">${s.n}</button>`).join('')}<div class=pn>${chips()}</div>`;
+  if(S.phase=='accuse')return accV();if(S.phase=='done')return resV();
+  const T=[['ev','Bukti'],['bd','Papan'],['su','Tersangka'],['nt','Catatan'],['vt','Voting']];
+  let b='';
+  if(tab=='ev')b=S.mine.map(e=>evCard(e,S.board.some(x=>x.id==e.id)?'<small>✓ di papan</small>':`<button onclick="act({type:'share',id:'${e.id}'})">Kirim ke papan</button>`)).join('')||'<i>Belum ada bukti.</i>';
+  if(tab=='bd')b=S.board.map(e=>evCard(e,`<label><input type=checkbox ${sel.includes(e.id)?'checked':''} onchange="tg('${e.id}')"> pilih</label>`)).join('')+`<div class=pn><b>Hubungkan 2 bukti</b><input type=text id=th placeholder="Teori: mengapa keduanya berhubungan?"><button ${sel.length==2?'':'disabled'} onclick="lk()">Hubungkan (${sel.length}/2)</button></div>`+S.links.map(l=>`<div class=sm>🧵 ${l.a}↔${l.b}: ${E(l.text)}</div>`).join('');
+  if(tab=='su')b=c.suspects.map(s=>`<div class=pn><b>${s.n}</b><p class=sm>${E(s.d)}</p>${c.ask.filter(a=>a.s==s.id).map(a=>`<button class=g ${S.mine.some(m=>m.id==a.id)?'disabled':''} onclick="act({type:'ask',id:'${a.id}'})">❓ ${E(a.q)}${S.asked.includes(a.id)?'':' (−90 dtk)'}</button>`).join('')}</div>`).join('')+'<p class=sm>Jawaban interogasi masuk ke tab Bukti.</p>';
+  if(tab=='nt'){const k='n'+S.code+me.pid;b=`<textarea rows=14 oninput="localStorage['${k}']=this.value" placeholder="Catatan pribadi…">${E(localStorage[k]||'')}</textarea>`}
+  if(tab=='vt')b=`<div class=pn>${E(c.brief)}</div><button onclick="act({type:'startvote'})" style="width:100%">⚖ Mulai Voting Tim</button>`;
+  return`<div class=row><b style="flex:1">${c.title.slice(10)}</b><span id=tm></span></div><nav>${T.map(t=>`<button class="${tab==t[0]?'on':''}" onclick="tab='${t[0]}';render()">${t[1]}</button>`).join('')}</nav><div class=grid style="margin-top:10px">${b}</div>`}
+function tg(id){sel=sel.includes(id)?sel.filter(x=>x!=id):[...sel,id].slice(-2);render()}
+function lk(){act({type:'link',a:sel[0],b:sel[1],text:$('#th').value});sel=[];tab='bd'}
+function accV(){const c=S.c,d=S.draft,mine=S.players.find(p=>p.id==me.pid)||{};
+  const sl=(k,arr)=>`<select onchange="act({type:'draft',k:'${k}',v:this.value})"><option value="">— pilih —</option>${arr.map(([v,t])=>`<option value="${v}" ${d[k]==v?'selected':''}>${E(t)}</option>`).join('')}</select>`;
+  const pos=[1,2,3,4,5,6].map(n=>[n,'Urutan '+n]);
+  return`<h2>Tuduhan Akhir</h2><div class=pn><b>Pelaku</b>${sl('culprit',c.suspects.map(s=>[s.id,s.n]))}<b>Motif</b>${sl('motive',c.mot)}<b>Metode</b>${sl('method',c.met)}<b>Saksi yang berbohong demi menutupi hal lain</b>${sl('liar',c.suspects.map(s=>[s.id,s.n]))}</div>
+  <div class=pn><b>Bukti palsu / menyesatkan</b>${S.board.filter(e=>e.id[0]=='E').map(e=>`<div><label><input type=checkbox class=fk value="${e.id}" ${(d.fake||[]).includes(e.id)?'checked':''} onchange="act({type:'draft',k:'fake',v:[...document.querySelectorAll('.fk:checked')].map(x=>x.value)})"> ${e.id} ${E(e.t)}</label></div>`).join('')||'Tidak ada bukti di papan.'}</div>
+  <div class=pn><b>Rekonstruksi kronologi</b>${c.tl.map(e=>`<div>${E(e.t)}<select onchange="act({type:'draft',k:'time.${e.k}',v:this.value})"><option value="">—</option>${pos.map(([v,t])=>`<option value="${v}" ${d.time[e.k]==v?'selected':''}>${t}</option>`).join('')}</select></div>`).join('')}</div>
+  <button style="width:100%" ${mine.locked?'disabled':''} onclick="act({type:'lock'})">${mine.locked?'Terkunci 🔒 menunggu tim':'KUNCI TUDUHAN'}</button><div class=pn>${chips()}</div>`}
+start();
+</script></body></html>
