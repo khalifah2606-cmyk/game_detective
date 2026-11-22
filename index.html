@@ -37,11 +37,16 @@ function start(){
 const bad='<div class=pn>Tidak bisa terhubung ke server. Pastikan <b>node server.js</b> berjalan dan buka lewat alamat http://…:3000</div>';
 async function create(){try{me=await post('/api/create',{});sessionStorage.me=JSON.stringify(me);connect()}catch(e){$('#app').innerHTML=bad}}
 async function join(){try{const r=await post('/api/join',{code:$('#cd').value.toUpperCase(),name:$('#nm').value||'Detektif'});if(r.err)return $('#er').textContent=r.err;me=r;sessionStorage.me=JSON.stringify(me);connect()}catch(e){$('#er').textContent='Server tidak terjangkau'}}
-function connect(){const es=new EventSource(`/events?code=${me.code}&pid=${me.pid}`);
-  es.onmessage=e=>{S=JSON.parse(e.data);off=S.now-Date.now();
-    if(host()&&S.board.length>pB)sfx('type');if(!host()&&S.mine.length>pM&&pM)sfx('clue'),toast('🔎 Bukti baru di tanganmu!');
-    if(host()&&S.log.some(l=>l.includes('tersembunyi'))&&S.board.length==pB&&S.links.length)0;pB=S.board.length;pM=S.mine.length;render()};
-  es.onerror=()=>{};}
+let last='';
+function connect(){const poll=async()=>{try{
+  const r=await fetch(`/state?code=${me.code}&pid=${me.pid}`,{cache:'no-store'});
+  if(r.status==404){sessionStorage.removeItem('me');location.reload();return}
+  const d=await r.json();off=d.now-Date.now();const k=JSON.stringify({...d,now:0});
+  if(k!==last){last=k;S=d;
+    if(host()&&S.board.length>pB)sfx('type');
+    if(!host()&&S.mine.length>pM&&pM){sfx('clue');toast('🔎 Bukti baru di tanganmu!')}
+    pB=S.board.length;pM=S.mine.length;render()}
+  }catch(e){}setTimeout(poll,900)};poll()}
 document.addEventListener('focusout',()=>{if(pend){pend=false;setTimeout(render,60)}});
 setInterval(()=>{const t=$('#tm');if(t&&S&&S.deadline){const s=Math.max(0,Math.round((S.deadline-Date.now()-off)/1000));t.textContent=Math.floor(s/60)+':'+String(s%60).padStart(2,'0')}},500);
 function render(){if(!S)return;const a=document.activeElement;if(!host()&&a&&(a.tagName=='TEXTAREA'||a.tagName=='SELECT'||(a.tagName=='INPUT'&&a.type=='text'))){pend=true;return}

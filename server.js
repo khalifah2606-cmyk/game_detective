@@ -151,6 +151,11 @@ http.createServer((q, res) => {
   const u = new URL(q.url, 'http://x');
   if (u.pathname === '/') { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); return res.end(fs.readFileSync(__dirname + '/index.html')); }
   if (u.pathname === '/api/info') { res.writeHead(200); return res.end(JSON.stringify({ ip: lan(), all: lans() })); }
+  if (u.pathname === '/state') {
+    const r = rooms[u.searchParams.get('code')];
+    res.writeHead(r ? 200 : 404, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    return res.end(r ? JSON.stringify(view(r, u.searchParams.get('pid'))) : '{}');
+  }
   if (u.pathname === '/events') {
     const r = rooms[u.searchParams.get('code')]; if (!r) { res.writeHead(404); return res.end(); }
     res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
